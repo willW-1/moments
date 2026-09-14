@@ -15,7 +15,8 @@ import { t, useT } from '../../i18n';
 import styles from './MessageBoard.module.css';
 
 // 留言板：每条留言显示内容 + 日期 + 作者，支持一层回复
-function MessageBoard({ isViewer }) {
+// 权限：user 可改/删任意留言与回复；viewer 只能改/删自己发的那条（服务端同样校验）
+function MessageBoard({ isViewer, username }) {
   useT(); // 订阅语言（留言内容本身是用户写的，不翻译）
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +35,11 @@ function MessageBoard({ isViewer }) {
   const [editReplyContent, setEditReplyContent] = useState('');
 
   const getToken = () => localStorage.getItem('token');
+
+  // 能不能改/删这条：user 全都行，viewer 只限自己发的。
+  // 比 author（用户名）而不是 user_id —— 接口虽然返回了 user_id，但前端手里只有
+  // /api/me 给的 username；用户名是登录名，唯一且不可改，比改成对比 id 更省事。
+  const canModify = (item) => !isViewer || (!!item.author && item.author === username);
 
   const load = async () => {
     const token = getToken();
@@ -255,8 +261,8 @@ function MessageBoard({ isViewer }) {
                 <button type="button" className={styles.linkBtn} onClick={() => startReply(msg)}>
                   {t('common.reply')}
                 </button>
-                {/* 旁观者不显示编辑/删除 */}
-                {!isViewer && (
+                {/* 旁观者只对自己发的留言显示编辑/删除 */}
+                {canModify(msg) && (
                   <>
                     <button type="button" className={styles.linkBtn} onClick={() => startEdit(msg)}>
                       {t('common.edit')}
@@ -340,7 +346,7 @@ function MessageBoard({ isViewer }) {
                       <p className={styles.content}>{reply.content}</p>
                     )}
 
-                    {editingReplyId !== reply.id && !isViewer && (
+                    {editingReplyId !== reply.id && canModify(reply) && (
                       <div className={styles.itemActions}>
                         <button
                           type="button"

@@ -68,14 +68,22 @@ function requireAuth(req, res, next) {
 }
 
 // 角色权限中间件：requireAuth 之后使用，限定只有指定角色能继续。
-// user=使用者（可增删改所有内容）；viewer=旁观者（仅可在留言板留言/回复，其余只读）
+// user=使用者（可增删改所有内容）；viewer=旁观者（可在留言板发言并管理自己的留言/回复，其余只读）
 function requireRole(...roles) {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: '没有权限执行此操作（旁观者账号仅可在留言板留言）' });
+      return res.status(403).json({ error: '没有权限执行此操作（旁观者账号仅可在留言板发言并管理自己的留言）' });
     }
     next();
   };
+}
+
+// 留言板是唯一对旁观者开放的写入口，权限在这里再分一层：
+//   user   → 可改/删任意留言、回复
+//   viewer → 只能改/删自己发的那条（按 user_id 判定）
+// 注意：前端隐藏按钮只是 UX，真正的拦截靠这里——不能只改前端。
+function canModifyBoardItem(req, item) {
+  return req.user.role === 'user' || item.user_id === req.user.userId;
 }
 
 app.get('/api/hello', (req, res) => {
@@ -546,13 +554,16 @@ app.post('/api/messages', requireAuth, async (req, res) => {
   }
 });
 
-// 更新一条留言（需登录），body: { content }
-app.put('/api/messages/:id', requireAuth, requireRole('user'), async (req, res) => {
+// 更新一条留言（需登录，user 任意 / viewer 仅自己的），body: { content }
+app.put('/api/messages/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: '无效的 id' });
     const existing = await prisma.message.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: '留言不存在' });
+    if (!canModifyBoardItem(req, existing)) {
+      return res.status(403).json({ error: '只能修改自己发的留言' });
+    }
 
     const { content } = req.body || {};
     if (!content || !String(content).trim()) {
@@ -577,13 +588,16 @@ app.put('/api/messages/:id', requireAuth, requireRole('user'), async (req, res) 
   }
 });
 
-// 删除一条留言（需登录）
-app.delete('/api/messages/:id', requireAuth, requireRole('user'), async (req, res) => {
+// 删除一条留言（需登录，user 任意 / viewer 仅自己的）
+app.delete('/api/messages/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: '无效的 id' });
     const existing = await prisma.message.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: '留言不存在' });
+    if (!canModifyBoardItem(req, existing)) {
+      return res.status(403).json({ error: '只能删除自己发的留言' });
+    }
     await prisma.message.delete({ where: { id } });
     res.json({ success: true });
   } catch (err) {
@@ -624,13 +638,16 @@ app.post('/api/messages/:id/replies', requireAuth, async (req, res) => {
   }
 });
 
-// 编辑一条留言回复（需登录），body: { content }
-app.put('/api/message-replies/:id', requireAuth, requireRole('user'), async (req, res) => {
+// 编辑一条留言回复（需登录，user 任意 / viewer 仅自己的），body: { content }
+app.put('/api/message-replies/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: '无效的 id' });
     const existing = await prisma.messageReply.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: '回复不存在' });
+    if (!canModifyBoardItem(req, existing)) {
+      return res.status(403).json({ error: '只能修改自己发的回复' });
+    }
 
     const { content } = req.body || {};
     if (!content || !String(content).trim()) {
@@ -655,13 +672,16 @@ app.put('/api/message-replies/:id', requireAuth, requireRole('user'), async (req
   }
 });
 
-// 删除一条留言回复（需登录）
-app.delete('/api/message-replies/:id', requireAuth, requireRole('user'), async (req, res) => {
+// 删除一条留言回复（需登录，user 任意 / viewer 仅自己的）
+app.delete('/api/message-replies/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: '无效的 id' });
     const existing = await prisma.messageReply.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: '回复不存在' });
+    if (!canModifyBoardItem(req, existing)) {
+      return res.status(403).json({ error: '只能删除自己发的回复' });
+    }
     await prisma.messageReply.delete({ where: { id } });
     res.json({ success: true });
   } catch (err) {

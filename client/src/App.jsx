@@ -149,7 +149,7 @@ function App() {
     }
   };
 
-  // 旁观者：只读 + 仅可在留言板留言，全站隐藏增删改入口
+  // 旁观者：其余只读，仅留言板可发言 + 管理自己发的那条，全站隐藏其余增删改入口
   const isViewer = role === 'viewer';
 
   if (authState === 'loggedOut') {
@@ -225,7 +225,7 @@ function App() {
             />
           </main>
           <aside className={`app-side-right ${mobileTab === 'messages' ? 'active' : ''}`}>
-            <MessageBoard isViewer={isViewer} />
+            <MessageBoard isViewer={isViewer} username={username} />
           </aside>
         </div>
       )}
